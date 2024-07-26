@@ -1,0 +1,3 @@
+- [ ] Adicionar legendas em multi_plots pegando as árvores em transformando elas em strings
+- [ ] Adicionar o métrica de comparação de "convergência" (em um disco?) em um ponto no futuro (a ser definido).
+- [ ] Transformar em uma classe com métodos, fica mais fácil de fazer as diferentes ações
