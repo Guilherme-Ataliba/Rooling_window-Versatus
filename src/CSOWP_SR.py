@@ -4,10 +4,11 @@ from typing import Any, List
 import pandas as pd
 import numpy as np
 from random import randint, choice, uniform, seed
-from src.ExpressionTree import *
+from ExpressionTree import *
 from scipy.optimize import curve_fit, differential_evolution, dual_annealing
 from copy import deepcopy
 import pickle
+import pyswarms
 
 class Particle():
     "v: velocity vector"
@@ -850,12 +851,69 @@ class SymbolicRegression():
         # if len(me.c.vector) <= 0:
         #         return me.copy_AEG(), 0
 
+
+        if self.optimization_kind == "NoOpt":
+            # Baseline for comparison, no optimization method
+            me = me.copy_AEG()
+            return me, 0
+
+
         if self.optimization_kind == "PSO":
             if check_pool == False:
                 return me.copy_AEG(), 0
             else:
                 r_me, r_Ic = self.PSO(me, g, Ic)
                 return r_me, r_Ic
+            
+        if self.optimization_kind == "PSO_NEW":
+            me = me.copy_AEG()
+
+            # Set-up hyperparameters
+            options = {'c1': 0.5, 'c2': 0.3, 'w':0.9}
+            n_particles = 30
+            iterations = 300
+
+
+            n_params = len(me.pool[0].vector)
+            if n_params <= 0:
+                print("nada para otimizar")
+                return me, 0    # In this case there's nothing to optimize
+
+
+            # Creating a string that later will be converted to a function call
+            fcall_string = "func(X, "
+            i=0
+            while i<n_params-1:
+                fcall_string += f"params[:, {i}], "
+                i+=1
+            fcall_string += f"params[:, {i}])"
+
+            
+
+            def cost_function(params):
+                func = self.toFunc(me)
+                X = np.c_[self._features[self._feature_names[0]]]
+                y = np.c_[self.y]
+                y_pred = eval(fcall_string)
+                return np.mean((np.c_[self.y] - y_pred)**2, axis=0)            
+
+            # Call instance of PSO
+            optimizer = pyswarms.single.GlobalBestPSO(n_particles=n_particles, dimensions=n_params, options=options)
+
+            # Perform optimization
+            _, pos = optimizer.optimize(cost_function, iters=iterations, verbose=False)  
+
+
+            particle = Particle(pos, 
+                                    self._generate_random_velocity(me.pool[0].vector.shape[0]),
+                                    me.pool[0].vector)  
+            me.pool.append(particle)
+            me.pool = self.sort_pool_array(me)
+            me.c = me.pool[0]
+            me.sexp.fitness_score = self.fitness_score(me)
+            me.sexp = self._convert_to_ExpTree(me)            
+
+            return me, 0
         
         if self.optimization_kind == "LS":
             me = me.copy_AEG()
@@ -999,12 +1057,13 @@ class SymbolicRegression():
         
         lbest = me.pool[i].best
         if (lbest.all() == None):
-            lbest = c
+            lbest = c.copy()
             # print("entrei: ", c)
             me.pool[i].best = lbest
+
         
         gbest = me.c.best
-        if (gbest.all() == None):
+        if (gbest.all() == None) or gbest is None:
             gbest = c
             me.c.best = gbest
         
@@ -1020,7 +1079,14 @@ class SymbolicRegression():
         
         # Update the particle's velocity and position
         # a coordinate at a time
-        # print(v)
+        
+        if lbest == None:
+            lbest = c.copy()
+        if gbest == None:
+            gbest = c.copy()
+        if v == None:
+            v = self._generate_random_velocity(c.shape)
+
         for i in range(0, I):
             lnudge = (WL * r1 * (lbest[i] - c[i]))
             gnudge = (WG * r2 * (gbest[i] - c[i]))
