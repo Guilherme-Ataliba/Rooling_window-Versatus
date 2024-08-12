@@ -64,6 +64,9 @@ class rollingWindow():
         if visualize is True:
             self.visualize()
 
+        if visualize is True:
+            self.visualize()
+
 
     def _filter(self, step):
         XStep = self.X[(self.X >= step) & (self.X < step + self.L)]
@@ -172,3 +175,4 @@ class rollingWindow():
 
         # Display the plot
         plt.show()
+
