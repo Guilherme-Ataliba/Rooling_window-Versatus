@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import seaborn as sns
 
+from pathos.multiprocessing import ProcessingPool
+
 
 class rollingWindow():
 
-    def __init__(self, G: int = 3, maxPop: int = 100, SEED: int = 42, ignore_warning=False,
+    def __init__(self, G: int = 3, maxPop: int = 100, SEED: int = None, ignore_warning=False,
                   const_range=(0,1), operators=None, functions=None, verbose=False,
                   weights=None, island_interval=None, optimization_kind="LS", return_func=False,
                   custom_functions_dict=None, feature_names=["x"], dir_path=None):
@@ -26,18 +28,23 @@ class rollingWindow():
         self.functions = None
         self.dir_path = dir_path
 
-        self.SR = SymbolicRegression(G=G, max_population_size=maxPop,
-                            random_const_range=const_range, operators=operators, functions=functions,
-                            weights=weights, island_interval=island_interval, optimization_kind=optimization_kind,
-                            custom_functions_dict=custom_functions_dict)
+        self.SR_params = [
+            G, "y", maxPop, 5, None, None, None, 
+            const_range, operators, functions, weights, island_interval,
+            optimization_kind, custom_functions_dict
+        ]
+
+        # self.SR = SymbolicRegression(G=G, max_population_size=maxPop,
+        #                     random_const_range=const_range, operators=operators, functions=functions,
+        #                     weights=weights, island_interval=island_interval, optimization_kind=optimization_kind,
+        #                     custom_functions_dict=custom_functions_dict)
         
         if (self.dir_path is not None) and (not os.path.isdir(self.dir_path)):
             print(f"Created missing directorie(s): {self.dir_path}")
             os.makedirs(self.dir_path)
 
 
-    def fit(self, X: np.ndarray, y: np.ndarray, x_range:Tuple[float, float]=None,
-             L: float = None, nPics: int = None):
+    def fit(self, X: np.ndarray, y: np.ndarray, x_range:Tuple[float, float]=None, L: float = None, nPics: int = None, visualize=False):
         
         self.X = X
         self.y = y
@@ -62,19 +69,33 @@ class rollingWindow():
         self.nPics = int(self.nPics)
         self.stepSize = (self.b - self.a)/self.nPics
 
+        if visualize is True:
+            self.visualize()
+
+        if visualize is True:
+            self.visualize()
+
 
     def _filter(self, step):
         XStep = self.X[(self.X >= step) & (self.X < step + self.L)]
         yStep = self.y[(self.X >= step) & (self.X < step + self.L)]
         return XStep, yStep
     
-    def _do(self, X, y, trees, step):
-        self.SR.fit(np.c_[X], y, feature_names=self.feature_names)
-        outputAEG = self.SR.predict()
-        trees[f"({step}, {step+self.L})"] = [outputAEG.sexp, self.SR.fitness_score(outputAEG)]
+    def _do(self, X, y, step, SR):
+        SR.fit(np.c_[X], y, feature_names=self.feature_names)
+        outputAEG = SR.predict()
+        
+        trees = {}
+        trees[f"({step}, {step+self.L})"] = [outputAEG.sexp, SR.fitness_score(outputAEG)]
+
         return trees
 
-    def run(self):
+    def _execute(self, step, SR):
+        XStep, yStep = self._filter(step)
+        trees = self._do(XStep, yStep, step, SR)
+        return trees
+    
+    def run(self, n_processes=0):
         if self.ignore_warning:
             warnings.filterwarnings("ignore")
         
@@ -85,25 +106,60 @@ class rollingWindow():
         step = self.a
 
         trees = {}
-        
+
         # Rolling Window
-        XStep, yStep = self._filter(step)
-        trees = self._do(XStep, yStep, trees, step)
-        step += self.stepSize
-        while step < end:
-            XStep, yStep = self._filter(step)
-            trees = self._do(XStep, yStep, trees, step)
+
+        # Run in Serial
+        if n_processes == 0:
+            SR = SymbolicRegression(*self.SR_params)
+            
+            # Rolling Window
+            tree = self._execute(step, SR)
+            trees[ list(tree.keys())[0] ] = list(tree.values())[0]
             step += self.stepSize
-        XStep, yStep = self._filter(step)
-        trees = self._do(XStep, yStep, trees, step)
-        
+            while step < end:
+                tree = self._execute(step, SR)
+                trees[ list(tree.keys())[0] ] = list(tree.values())[0]
+                step += self.stepSize
+            tree = self._execute(step, SR)
+            trees[ list(tree.keys())[0] ] = list(tree.values())[0]
 
+        # Run in Parallel
+        else:
+            stepList = [step]
+            step += self.stepSize
+            while step < end:
+                stepList.append(step)
+                step += self.stepSize
+            stepList.append(step)
 
+            if n_processes > len(stepList):
+                SR_num = stepList
+            else:
+                SR_num = n_processes
+            SR_list = [SymbolicRegression(*self.SR_params) for _ in range(SR_num)]
+
+            args = []
+            c = 0
+            for step in stepList:
+                args.append( (step, SR_list[c]) )
+                c = (c+1)%SR_num
+
+            with ProcessingPool(processes=n_processes) as pool:
+                results = pool.map(lambda arg: self._execute(arg[0], arg[1]), args)
+            
+            for element in results:
+                trees[ list(element.keys())[0] ] = list(element.values())[0]
+
+            SR = SR_list[0]
+            SR.fit(np.c_[self.X], self.y, feature_names=self.feature_names)
+
+    
         # Return
         fTrees = []
         for i in trees.values():
             fTrees.append(i[0])
-        aFuncs = [self.SR.toFunc(tree) for tree in fTrees]
+        aFuncs = [SR.toFunc(tree) for tree in fTrees]
 
         self.functions = aFuncs
 
@@ -139,6 +195,11 @@ class rollingWindow():
         
         for c, func in enumerate(self.functions):
             y = func(X)
+
+            
+            if type(y) is not np.ndarray:
+                y = np.array([y for _ in X])
+
             plt.plot(X, y, label=c)
         plt.legend()
         plt.show()
@@ -170,3 +231,4 @@ class rollingWindow():
 
         # Display the plot
         plt.show()
+
