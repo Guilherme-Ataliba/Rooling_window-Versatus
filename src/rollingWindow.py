@@ -36,8 +36,7 @@ class rollingWindow():
             os.makedirs(self.dir_path)
 
 
-    def fit(self, X: np.ndarray, y: np.ndarray, x_range:Tuple[float, float]=None,
-             L: float = None, nPics: int = None):
+    def fit(self, X: np.ndarray, y: np.ndarray, x_range:Tuple[float, float]=None, L: float = None, nPics: int = None, visualize=False):
         
         self.X = X
         self.y = y
@@ -61,6 +60,9 @@ class rollingWindow():
 
         self.nPics = int(self.nPics)
         self.stepSize = (self.b - self.a)/self.nPics
+
+        if visualize is True:
+            self.visualize()
 
 
     def _filter(self, step):
