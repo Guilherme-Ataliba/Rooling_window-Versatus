@@ -1,56 +1,55 @@
-from CSOWP_SR import *
-from ExpressionTree import *
-
-from typing import Callable, Tuple
+import pandas as pd
+import numpy as np
 from random import seed
+import matplotlib.pyplot as plt
+import sympy as smp
 import warnings
-import os
+import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import seaborn as sns
+
+from typing import *
+from inspect import isclass
+import os
 
 from pathos.multiprocessing import ProcessingPool
 
 
 class rollingWindow():
 
-    def __init__(self, G: int = 3, maxPop: int = 100, SEED: int = None, ignore_warning=False,
-                  const_range=(0,1), operators=None, functions=None, verbose=False,
-                  weights=None, island_interval=None, optimization_kind="LS", return_func=False,
-                  custom_functions_dict=None, feature_names=["x"], dir_path=None):
-        
+    def __init__(self, SEED=42, ignore_warnings=False, dir_path=None):
+        self.ignore_warning = ignore_warnings
         self.SEED = SEED
-        self.ignore_warning = ignore_warning
-        self.verbose = verbose
-        self.return_func = return_func
-        self.feature_names = feature_names
         self.functions = None
         self.dir_path = dir_path
 
-        self.SR_params = [
-            G, "y", maxPop, 5, None, None, None, 
-            const_range, operators, functions, weights, island_interval,
-            optimization_kind, custom_functions_dict
-        ]
-
-        # self.SR = SymbolicRegression(G=G, max_population_size=maxPop,
-        #                     random_const_range=const_range, operators=operators, functions=functions,
-        #                     weights=weights, island_interval=island_interval, optimization_kind=optimization_kind,
-        #                     custom_functions_dict=custom_functions_dict)
+        if self.dir_path is not None:
+            if not os.path.isdir(self.dir_path):
+                os.makedirs(self.dir_path)
         
-        if (self.dir_path is not None) and (not os.path.isdir(self.dir_path)):
-            print(f"Created missing directorie(s): {self.dir_path}")
-            os.makedirs(self.dir_path)
 
 
-    def fit(self, X: np.ndarray, y: np.ndarray, x_range:Tuple[float, float]=None, L: float = None, nPics: int = None, visualize=False):
+    def fit(self, X: np.ndarray, y: np.ndarray, SR_model, x_range:Tuple[float, float]=None, L: float = None, nPics: int = None, visualize=False):
         
         self.X = X
         self.y = y
 
+        if not isclass(SR_model):
+           raise TypeError("SR_model must be a class, not an instantiated object")
+        if not callable(getattr(SR_model, "fit")):
+           raise AttributeError("SR_model must have a fit method")
+
+        self.SR_class = SR_model
+
+        if X.shape[1] > 1:
+          self.X0 = X[:, 0]
+        else:
+          self.X0 = X
+
         if x_range is None:
-            self.x_range = (X.min(), X.max())
+            self.x_range = (self.X0.min(), self.X0.max())
         else:
             self.x_range = x_range
 
@@ -59,7 +58,7 @@ class rollingWindow():
         self.L = L
         self.nPics = nPics
         
-        if L is None and nPics is None:
+        if (L is None) and (nPics is None):
             raise ValueError("L and nPics can't be simultaneously None, one or both must be informed.")
         elif L is None:
             self.L = (self.b-self.a)/nPics
@@ -72,32 +71,25 @@ class rollingWindow():
         if visualize is True:
             self.visualize()
 
-        if visualize is True:
-            self.visualize()
-
 
     def _filter(self, step):
-        XStep = self.X[(self.X >= step) & (self.X < step + self.L)]
-        yStep = self.y[(self.X >= step) & (self.X < step + self.L)]
+        XStep = np.c_[self.X[(self.X0 >= step) & (self.X0 < step + self.L)]]
+        yStep = np.c_[self.y[(self.X0 >= step) & (self.X0 < step + self.L)]]
         return XStep, yStep
-    
-    def _do(self, X, y, step, SR):
-        SR.fit(np.c_[X], y, feature_names=self.feature_names)
-        outputAEG = SR.predict()
-        
-        trees = {}
-        trees[f"({step}, {step+self.L})"] = [outputAEG.sexp, SR.fitness_score(outputAEG)]
 
-        return trees
-
-    def _execute(self, step, SR):
+    def _execute(self, step, SR_model):
         XStep, yStep = self._filter(step)
-        trees = self._do(XStep, yStep, step, SR)
-        return trees
-    
-    def run(self, n_processes=0):
+        SR_model.fit(XStep, yStep)
+        solution = SR_model.get_solutions()
+        return solution
+
+    def run(self, n_processes=0, overwrite=False):
         if self.ignore_warning:
             warnings.filterwarnings("ignore")
+
+        if self.dir_path is not None:
+            if os.path.isfile(os.path.join(self.dir_path, "solutions.pickle")) and not overwrite:
+                raise FileExistsError("solutions.pickle exists")
         
         np.random.seed(self.SEED)
         seed(self.SEED)
@@ -105,24 +97,27 @@ class rollingWindow():
         end = self.b-self.stepSize
         step = self.a
 
-        trees = {}
+        solutions = {}
 
         # Rolling Window
 
         # Run in Serial
         if n_processes == 0:
-            SR = SymbolicRegression(*self.SR_params)
-            
+            SR_model = self.SR_class()
+
             # Rolling Window
-            tree = self._execute(step, SR)
-            trees[ list(tree.keys())[0] ] = list(tree.values())[0]
+            print(f"Training {step}/{end}")
+            sol = self._execute(step, SR_model)
+            solutions[step] = sol
             step += self.stepSize
             while step < end:
-                tree = self._execute(step, SR)
-                trees[ list(tree.keys())[0] ] = list(tree.values())[0]
+                print(f"Training {step}/{end}")
+                sol = self._execute(step, SR_model)
+                solutions[step] = sol
                 step += self.stepSize
-            tree = self._execute(step, SR)
-            trees[ list(tree.keys())[0] ] = list(tree.values())[0]
+            print(f"Training {step}/{end}")
+            sol = self._execute(step, SR_model)
+            solutions[step] = sol
 
         # Run in Parallel
         else:
@@ -137,7 +132,7 @@ class rollingWindow():
                 SR_num = stepList
             else:
                 SR_num = n_processes
-            SR_list = [SymbolicRegression(*self.SR_params) for _ in range(SR_num)]
+            SR_list = [self.SR_class() for _ in range(SR_num)]
 
             args = []
             c = 0
@@ -147,62 +142,52 @@ class rollingWindow():
 
             with ProcessingPool(processes=n_processes) as pool:
                 results = pool.map(lambda arg: self._execute(arg[0], arg[1]), args)
-            
-            for element in results:
-                trees[ list(element.keys())[0] ] = list(element.values())[0]
 
-            SR = SR_list[0]
-            SR.fit(np.c_[self.X], self.y, feature_names=self.feature_names)
-
+            solutions = list(zip(stepList, results))
     
         # Return
-        fTrees = []
-        for i in trees.values():
-            fTrees.append(i[0])
-        aFuncs = [SR.toFunc(tree) for tree in fTrees]
-
-        self.functions = aFuncs
-
-        if self.verbose:
-            to_return = trees
-        else:
-            to_return = tuple(trees.values())
+        self.solutions = solutions
         
-
-        # Export result to dir
-        if self.dir_path is not None:
-            for c, tree in enumerate(to_return):
-                tree = tree[0]
-                
-                file_name = f"tree_{self.a + c*self.stepSize}-{self.a+(c+1)*self.stepSize}"
-                path = os.path.join(self.dir_path, file_name)
-                with open(path, "wb") as file:
-                    pickle.dump(tree, file)
+        if self.dir_path:
+            with open(os.path.join(self.dir_path, "solutions.pickle") , "wb") as file:
+                pickle.dump(solutions, file)
 
 
-        if self.return_func:
-            return to_return, aFuncs
-        else:
-            return to_return
+        return solutions
         
-        
-        
+    def set_functions(self, functions):
+      self.functions = functions
+    
     def multi_plots(self, x_range, n_points=1000):
         if self.functions is None:
-            raise RuntimeError("You must first execute the algorithm with run and after call multi_plots")
+            raise RuntimeError("You must call set_functions to inform the functions array to use")
         
         X = np.linspace(x_range[0], x_range[1], n_points)
+        
         
         for c, func in enumerate(self.functions):
             y = func(X)
 
-            
             if type(y) is not np.ndarray:
                 y = np.array([y for _ in X])
 
             plt.plot(X, y, label=c)
         plt.legend()
         plt.show()
+
+    def plot_over(self):
+      if self.functions is None:
+        raise RuntimeError("You must call set_functions to inform the functions array to use")
+      
+      plt.plot(self.X0, self.y)
+
+      end = self.b-self.stepSize
+
+      for c, step in enumerate(np.arange(self.a, end+self.stepSize, self.stepSize)):
+        X_step, _ = self._filter(step)
+        y = self.functions[c](X_step)
+        plt.plot(X_step, y)
+
 
     def visualize(self, bg_palette="inferno", bg_alpha=0.2,
                   bg_linecolor="black", bg_linewidth=1,
@@ -231,4 +216,27 @@ class rollingWindow():
 
         # Display the plot
         plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
