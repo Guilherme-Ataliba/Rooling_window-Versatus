@@ -11,7 +11,7 @@ import matplotlib.patches as patches
 import seaborn as sns
 
 from typing import *
-from inspect import isclass
+from inspect import isclass, signature
 import os
 
 from pathos.multiprocessing import ProcessingPool
@@ -40,11 +40,16 @@ class rollingWindow():
            raise TypeError("SR_model must be a class, not an instantiated object")
         if not callable(getattr(SR_model, "fit")):
            raise AttributeError("SR_model must have a fit method")
+        if not callable(getattr(SR_model, "get_solutions")):
+           raise AttributeError("SR_model must have a get_solutions method")
 
         self.SR_class = SR_model
 
-        if X.shape[1] > 1:
-          self.X0 = X[:, 0]
+        if len(X.shape) > 1:
+            if X.shape[1] > 1:
+                self.X0 = X[:, 0]
+            else:
+                self.X0 = X
         else:
           self.X0 = X
 
@@ -129,7 +134,7 @@ class rollingWindow():
             stepList.append(step)
 
             if n_processes > len(stepList):
-                SR_num = stepList
+                SR_num = len(stepList)
             else:
                 SR_num = n_processes
             SR_list = [self.SR_class() for _ in range(SR_num)]
@@ -158,24 +163,33 @@ class rollingWindow():
     def set_functions(self, functions):
       self.functions = functions
     
-    def multi_plots(self, x_range, n_points=1000):
+    def multi_plots(self, x_range, n_points=1000, axes=None):
         if self.functions is None:
             raise RuntimeError("You must call set_functions to inform the functions array to use")
         
+        if axes is not None:
+            axes = axes.flatten()
+        else:
+            axes = [plt.gca() for _ in range(len(self.functions))]
+
         X = np.linspace(x_range[0], x_range[1], n_points)
         
         
         for c, func in enumerate(self.functions):
-            y = func(X)
+            
+            if func.__code__.co_argcount >= 1:
+                y = func(X)
+            else:
+                y = np.array([func() for _ in range(len(X))])
 
             if type(y) is not np.ndarray:
                 y = np.array([y for _ in X])
 
-            plt.plot(X, y, label=c)
-        plt.legend()
+            axes[c].plot(X, y, label=c)
+            axes[c].set_title(f"Solution - Interval {c+1}")
         plt.show()
 
-    def plot_over(self):
+    def plot_over(self, X=None):
       if self.functions is None:
         raise RuntimeError("You must call set_functions to inform the functions array to use")
       
@@ -185,7 +199,21 @@ class rollingWindow():
 
       for c, step in enumerate(np.arange(self.a, end+self.stepSize, self.stepSize)):
         X_step, _ = self._filter(step)
-        y = self.functions[c](X_step)
+
+        func = self.functions[c]
+
+        if func.__code__.co_argcount >= 1:
+            
+            # Getting the indexes for each feature the function used
+            feature_indexes = signature(func).parameters.keys()
+            feature_indexes = [int(feature[1:]) for feature in feature_indexes]
+
+            features = [X_step[:, i] for i in feature_indexes]
+
+            y = func(*features)
+        else:
+            y = np.array([func() for _ in range(len(X_step))])
+
         plt.plot(X_step, y)
 
 
