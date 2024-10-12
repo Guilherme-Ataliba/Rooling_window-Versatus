@@ -31,7 +31,8 @@ class rollingWindow():
         
 
 
-    def fit(self, X: np.ndarray, y: np.ndarray, SR_model, x_range:Tuple[float, float]=None, L: float = None, nPics: int = None, visualize=False):
+    def fit(self, X: np.ndarray, y: np.ndarray, SR_model, x_range:Tuple[float, float]=None, L: float = None, 
+            nPics: int = None, nData: int = None, visualize=False):
         
         self.X = X
         self.y = y
@@ -62,16 +63,22 @@ class rollingWindow():
         self.b = self.x_range[1]
         self.L = L
         self.nPics = nPics
+        self.nData = nData
         
-        if (L is None) and (nPics is None):
-            raise ValueError("L and nPics can't be simultaneously None, one or both must be informed.")
-        elif L is None:
+        if (L is None) and (nPics is None) and (nData is None):
+            raise ValueError("L, nPics and nData can't be simultaneously None, one or both must be informed.")
+        if L is None and nData is None:
             self.L = (self.b-self.a)/nPics
-        elif nPics is None:
+        if nPics is None and nData is None:
             self.nPics = (self.b-self.a)/L
 
-        self.nPics = int(self.nPics)
-        self.stepSize = (self.b - self.a)/self.nPics
+        if nData is not None:
+            self.nPics = int(self.X.shape[0]/nData)
+            self.stepSize = abs(self.x_range[1]-self.x_range[0])/self.nPics
+            self.L = abs(self.x_range[1]-self.x_range[0])/self.nPics
+        else:
+            self.nPics = int(self.nPics)
+            self.stepSize = (self.b - self.a)/self.nPics
 
         if visualize is True:
             self.visualize()
@@ -221,6 +228,11 @@ class rollingWindow():
                   bg_linecolor="black", bg_linewidth=1,
                   linecolor="black", linewidth=3,
                   linestyle="dashed"):
+        
+        # print("nPics: ", self.nPics)
+        # print("L: ", self.L)
+        # print("stepSize: ", self.stepSize)
+
         ax = plt.gca()
         ax.plot(self.X, self.y, linewidth=linewidth, 
                 c=linecolor, linestyle=linestyle)
