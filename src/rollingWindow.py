@@ -73,7 +73,7 @@ class rollingWindow():
             self.nPics = (self.b-self.a)/L
 
         if nData is not None:
-            self.nPics = int(self.X.shape[0]/nData)
+            self.nPics = int(np.ceil(self.X.shape[0]/nData))
             self.stepSize = abs(self.x_range[1]-self.x_range[0])/self.nPics
             self.L = abs(self.x_range[1]-self.x_range[0])/self.nPics
         else:
@@ -256,6 +256,138 @@ class rollingWindow():
 
         # Display the plot
         plt.show()
+
+
+class SRRollingMetric():
+    def __init__(self, SEED=42, ignore_warnings=False, dir_path=None):
+        self.ignore_warning = ignore_warnings
+        self.SEED = SEED
+        self.functions = None
+        self.dir_path = dir_path
+
+        if self.dir_path is not None:
+            if not os.path.isdir(self.dir_path):
+                os.makedirs(self.dir_path)
+
+    def fit(self, X: np.ndarray, y: np.ndarray, SR_model, direction, start, n_points, n_runs=1,
+            x_range:Tuple[float, float]=None, visualize=False):
+        
+        self.X = X
+        self.y = y
+
+        if not isclass(SR_model):
+           raise TypeError("SR_model must be a class, not an instantiated object")
+        if not callable(getattr(SR_model, "fit")):
+           raise AttributeError("SR_model must have a fit method")
+        if not callable(getattr(SR_model, "get_solutions")):
+           raise AttributeError("SR_model must have a get_solutions method")
+
+        self.SR_class = SR_model
+
+        if len(X.shape) > 1:
+            if X.shape[1] > 1:
+                self.X0 = X[:, 0]
+            else:
+                self.X0 = X
+        else:
+          self.X0 = X
+
+        if x_range is None:
+            self.x_range = (self.X0.min(), self.X0.max())
+        else:
+            self.x_range = x_range
+
+
+        # Parameters
+        if start not in self.X:
+            raise ValueError("Start value not in X data")
+        
+        self.start_index = np.where(self.X == start)[0][0]
+
+        if type(direction) is not str:
+            raise TypeError("Direction must be a string")
+        direction = direction.lower()
+        if direction not in ["left", "right"]:
+            raise ValueError("Direction must be left or right")
+
+        self.direction = direction
+        if direction == "left" and n_points > self.start_index:
+            n_points = self.start_index
+        elif direction == "right" and self.X.shape[0] - self.start_index < n_points:
+            n_points = self.X.shape[0] - self.start_index
+
+        if type(n_points) is not int:
+            raise TypeError("n_points must be an integer")
+        self.n_points = n_points
+
+        if type(n_runs) is not int:
+            raise TypeError("n_runs must be an integer")
+        self.n_runs = n_runs
+
+
+        if visualize is True:
+            self.visualizeRollingMetric()
+
+    def run(self):
+        SR_model = self.SR_class()
+        solutions = {}
+
+        for i in range(1, self.n_points):
+            if self.direction == "left":
+                X_filt = self.X[self.start_index-i: self.start_index]
+                y_filt = self.y[self.start_index-i: self.start_index]
+            elif self.direction == "right":
+                X_filt = self.X[self.start_index: self.start_index+i]
+                y_filt = self.y[self.start_index: self.start_index+i]
+
+            for n in range(self.n_runs):
+                SR_model.fit(np.c_[X_filt], y_filt)
+                solution = SR_model.get_solutions()
+
+                solutions[f"{self.start_index}-{self.start_index-i}|{n}"] = solution
+
+        if self.dir_path:
+            with open(self.dir_path + f"/RollingMetric-{self.start_index}-{self.start_index-i}|{n}.pkl", "wb") as file:
+                pickle.dump(obj=solutions, file=file)
+
+        self.solutions = solutions
+        return solutions
+    
+    def visualizeRollingMetric(self,
+                    bg_color="red", bg_alpha=0.2,
+                    bg_linecolor="black", bg_linewidth=1,
+                    linecolor="black", linewidth=3,
+                    linestyle="dashed"):
+        
+        ax = plt.gca()
+        ax.plot(self.X, self.y, linewidth=linewidth, 
+                c=linecolor, linestyle=linestyle)
+        ax.set_xlim(self.X.min(), self.X.max())
+        ax.set_ylim(self.y.min(), self.y.max())
+
+        Xmin = self.X.min()
+        ymin = self.y.min()
+        ymax = abs(self.y.min() - self.y.max())
+
+        # Add a rectangle with a background color
+        x_start = self.X[self.start_index]
+
+        if self.direction == "left":
+            end = self.X[self.start_index - self.n_points]
+            start = end
+        else:
+            end = self.X[self.start_index + self.n_points]
+            start = x_start
+        L = abs(x_start - end)
+
+        rect = patches.Rectangle((start, ymin), L, ymax,
+                                    linewidth=bg_linewidth, edgecolor=bg_linecolor,
+                                    facecolor=bg_color, alpha=bg_alpha)
+        ax.add_patch(rect)
+
+        # Display the plot
+        plt.show()
+
 
 
 
