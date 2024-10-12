@@ -9,6 +9,7 @@ from copy import deepcopy
 from pysr import PySRRegressor
 import pandas as pd
 import numpy as np
+import sympy as smp
 
 def t1(X):
     return 10*np.exp(-0.5*np.exp(-0.5*X + 2))
@@ -45,10 +46,14 @@ data = [
 class rollingSR():
     def __init__(self):
         self.SR = PySRRegressor(
-            unary_operators=["exp"],
+            binary_operators=["+", "-", "*", "/"], 
+            unary_operators=["exp", "expp(x) = exp(-x)", "cos", "sin"],
             temp_equation_file=True,
             elementwise_loss="loss(prediction, target) = (prediction - target)^2",
-            warm_start=False
+            extra_sympy_mappings={"expp": lambda x: smp.exp(-x)},
+            niterations=60,
+            populations=20,
+            population_size=60
         )
 
     def fit(self, X, y):

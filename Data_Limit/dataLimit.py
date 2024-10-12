@@ -44,10 +44,17 @@ class trainRegions():
                 rowi = rollingWindow()
                 rowi.fit(self.X, self.y, self.SR_model, nPics = nPics)
 
-                solutions = rowi.run()
+                try:
+                    solutions = rowi.run()
+
+                    with open(self.dir_path + f"/solutions-{nPics}-{n}.pkl", "wb") as file:
+                        pickle.dump(solutions, file)
                 
-                with open(self.dir_path + f"/solutions-{nPics}-{n}.pkl", "wb") as file:
-                    pickle.dump(solutions, file)
+                # For cases where some window as zero data points
+                except ValueError:
+                    pass
+                
+                
     
     def _process_single_iteration(self, args):
         nPics, n, X, y, SR_model, dir_path = args
