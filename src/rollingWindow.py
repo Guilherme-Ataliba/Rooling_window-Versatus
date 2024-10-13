@@ -345,7 +345,7 @@ class SRRollingMetric():
                 y_filt = self.y[self.start_index: self.start_index+i]
 
             for n in range(self.n_runs):
-                print(f"Running: {self.start_index}-{self.start_index-i}|{n}\n")
+                print(f"Run ning: {self.start_index}-{self.start_index-i}|{n}\n")
 
                 SR_model.fit(np.c_[X_filt], y_filt)
                 solution = SR_model.get_solutions()
