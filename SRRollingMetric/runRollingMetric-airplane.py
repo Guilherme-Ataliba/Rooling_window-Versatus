@@ -1,15 +1,14 @@
 import sys
 sys.path.append("../src")
 
-import os
-import pickle
-from pathos.multiprocessing import ProcessingPool as Pool
-from rollingWindow import rollingWindow
-from copy import deepcopy
-from pysr import PySRRegressor
+from CSOWP_SR import *
+from ExpressionTree import *
+from rollingWindow import *
 import pandas as pd
 import numpy as np
-import sympy as smp
+import matplotlib.pyplot as plt
+from pysr import PySRRegressor
+import numpy as np
 
 def t1(X):
     return 10*np.exp(-0.5*np.exp(-0.5*X + 2))
@@ -54,6 +53,7 @@ class rollingSR():
             niterations=60,
             populations=20,
             population_size=60,
+            warm_start=False,
             verbosity=False,
             progress=False
         )
@@ -63,9 +63,17 @@ class rollingSR():
 
     def get_solutions(self):
         return self.SR.sympy().simplify()
-    
-from dataLimit import *
 
-trainR = trainRegions(rollingSR, "Outputs")
-trainR.fit(X2, y2, 1, ntimes=3)
-trainR.run()
+
+# Running
+
+RoWi = SRRollingMetric(dir_path="Outputs/Airplane")
+start_points = [-1, -6, -8, -12, -18, -20, -24]
+n_points = 36
+
+for start in start_points:
+    RoWi.fit(X3, y3, rollingSR, direction="left", start=X3[start], n_points=n_points, visualize=False)
+    RoWi.run()
+    
+
+

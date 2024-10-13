@@ -310,19 +310,23 @@ class SRRollingMetric():
         if direction not in ["left", "right"]:
             raise ValueError("Direction must be left or right")
 
+        if type(n_points) is not int:
+            raise TypeError("n_points must be an integer")
+        self.n_points = n_points
+        
+        if type(n_runs) is not int:
+            raise TypeError("n_runs must be an integer")
+        self.n_runs = n_runs
+        
         self.direction = direction
         if direction == "left" and n_points > self.start_index:
             n_points = self.start_index
         elif direction == "right" and self.X.shape[0] - self.start_index < n_points:
             n_points = self.X.shape[0] - self.start_index
 
-        if type(n_points) is not int:
-            raise TypeError("n_points must be an integer")
-        self.n_points = n_points
+        
 
-        if type(n_runs) is not int:
-            raise TypeError("n_runs must be an integer")
-        self.n_runs = n_runs
+        
 
 
         if visualize is True:
@@ -341,13 +345,15 @@ class SRRollingMetric():
                 y_filt = self.y[self.start_index: self.start_index+i]
 
             for n in range(self.n_runs):
+                print(f"Running: {self.start_index}-{self.start_index-i}|{n}\n")
+
                 SR_model.fit(np.c_[X_filt], y_filt)
                 solution = SR_model.get_solutions()
 
                 solutions[f"{self.start_index}-{self.start_index-i}|{n}"] = solution
 
         if self.dir_path:
-            with open(self.dir_path + f"/RollingMetric-{self.start_index}-{self.start_index-i}|{n}.pkl", "wb") as file:
+            with open(self.dir_path + f"/RollingMetric-{self.start_index}-{self.start_index-i}-{n}.pkl", "wb") as file:
                 pickle.dump(obj=solutions, file=file)
 
         self.solutions = solutions
