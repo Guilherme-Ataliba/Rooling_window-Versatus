@@ -352,9 +352,9 @@ class SRRollingMetric():
 
                 solutions[f"{self.start_index}-{self.start_index-i}|{n}"] = solution
 
-        if self.dir_path:
-            with open(self.dir_path + f"/RollingMetric-{self.start_index}-{self.start_index-i}-{n}.pkl", "wb") as file:
-                pickle.dump(obj=solutions, file=file)
+                if self.dir_path:
+                    with open(self.dir_path + f"/RollingMetric-{self.start_index}-{self.start_index-i}-{n}.pkl", "wb") as file:
+                        pickle.dump(obj=solutions, file=file)
 
         self.solutions = solutions
         return solutions

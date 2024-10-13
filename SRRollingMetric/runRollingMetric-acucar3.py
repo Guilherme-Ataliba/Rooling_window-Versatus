@@ -36,17 +36,18 @@ treated_seco.rename(columns={"Unnamed: 0": "weeks"}, inplace=True)
 X4 = treated_seco.weeks[::2]
 y4 = treated_seco.value[::2]
 
-sugar = yf.Ticker("SB=F")
-sugar_history = sugar.history(period="1y")
-sugar_history = sugar_history.asfreq("B")
+# sugar = yf.Ticker("SB=F")
+# sugar_history = sugar.history(period="1y")
+# sugar_history = sugar_history.asfreq("B")
 
-# Interpolando os dados
-sugar_history = sugar_history.interpolate()
+# # Interpolando os dados
+# sugar_history = sugar_history.interpolate()
 
-sugar_history.reset_index(inplace=True)
+# sugar_history.reset_index(inplace=True)
 
-X5 = sugar_history.index.values
-y5 = sugar_history["Open"].values
+sugar_data_manip = pd.read_csv("data/sugar_data_manip.csv")
+X5 = sugar_data_manip.X.values
+y5 = sugar_data_manip.y.values
 
 data = [
     [X3, y3],
@@ -86,7 +87,7 @@ start_points3 = [-200, -220, -230, -240]
 n_points = 20
 
 for start in start_points3:
-    RoWi.fit(X5, y5, rollingSR, direction="left", start=X5[start], n_points=n_points, visualize=False)
+    RoWi.fit(X5, y5, rollingSR, direction="left", start=X5[start], n_points=n_points, visualize=False, n_runs=3)
     RoWi.run()
     
 
