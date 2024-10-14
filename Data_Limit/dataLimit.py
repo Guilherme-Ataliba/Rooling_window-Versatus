@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from pysr import PySRRegressor
 from pathos.multiprocessing import ProcessingPool as Pool
 from copy import deepcopy
+import logging
 
 import os
 import pickle
@@ -17,9 +18,10 @@ import pickle
 
 class trainRegions():
 
-    def __init__(self, SR_model, dir_path=None):
+    def __init__(self, SR_model, dir_path=None, check_existance=True):
         self.SR_model = SR_model
         self.dir_path = dir_path
+        self.check_existance = check_existance
 
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
@@ -38,16 +40,24 @@ class trainRegions():
 
     def run(self):
 
+        logging.basicConfig(level=logging.ERROR, filename='info.log', format='%(asctime)s - %(levelname)s - %(message)s')
+
         for n in range(self.ntimes):
 
             for nPics in range(self.nstart, self.nend+1):
+                file_path = self.dir_path + f"/solutions-{nPics}-{n}.pkl"
+                if self.check_existance and os.path.isfile(file_path):
+                    logging.info(f"skipping {file_path}\n")
+                    print(f"skipping {file_path}\n")
+                    continue
+
                 rowi = rollingWindow()
                 rowi.fit(self.X, self.y, self.SR_model, nPics = nPics)
 
                 try:
                     solutions = rowi.run()
 
-                    with open(self.dir_path + f"/solutions-{nPics}-{n}.pkl", "wb") as file:
+                    with open(file_path, "wb") as file:
                         pickle.dump(solutions, file)
                 
                 # For cases where some window as zero data points
