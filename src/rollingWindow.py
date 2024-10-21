@@ -270,7 +270,7 @@ class SRRollingMetric():
                 os.makedirs(self.dir_path)
 
     def fit(self, X: np.ndarray, y: np.ndarray, SR_model, direction, start, n_points, n_runs=1,
-            x_range:Tuple[float, float]=None, visualize=False):
+            x_range:Tuple[float, float]=None, visualize=False, save_fig_path=None):
         
         self.X = X
         self.y = y
@@ -325,12 +325,12 @@ class SRRollingMetric():
             n_points = self.X.shape[0] - self.start_index
 
         
-
+    
         
 
 
         if visualize is True:
-            self.visualizeRollingMetric()
+            self.visualizeRollingMetric(save_fig_path=save_fig_path)
 
     def run(self):
         SR_model = self.SR_class()
@@ -363,7 +363,7 @@ class SRRollingMetric():
                     bg_color="red", bg_alpha=0.2,
                     bg_linecolor="black", bg_linewidth=1,
                     linecolor="black", linewidth=3,
-                    linestyle="dashed"):
+                    linestyle="dashed", save_fig_path=None):
         
         ax = plt.gca()
         ax.plot(self.X, self.y, linewidth=linewidth, 
@@ -392,6 +392,8 @@ class SRRollingMetric():
         ax.add_patch(rect)
 
         # Display the plot
+        if save_fig_path is not None:
+            plt.savefig(save_fig_path, dpi=300)
         plt.show()
 
 
