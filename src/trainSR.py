@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from time import time
 import os
@@ -9,9 +9,11 @@ from pathos.multiprocessing import ProcessingPool as Pool
 import typing
 from CSOWP_SR import *
 from ExpressionTree import *
+import logging
 
 class trainSR():
-    def __init__(self, dir_path, population, generations, max_expression_size=None,
+    def __init__(self, population, generations,
+                 dir_path=None, max_expression_size=None,
                  normalize=False, const_range=(0,1), normalize_range=(0,1),
                  n_points=None, x_range=None, ignore_warning=True, overwrite=False, n_runs=1, operators=None,
                  functions=None, weights=None, island_interval=None,
@@ -72,6 +74,8 @@ class trainSR():
         else:
             self.custom_functions_dict = custom_functions_dict
         
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
+
 
     def fit(self, file_name:List, func:List, x_range:List=None,
              n_points:List=None, info:List=None, functions:List=None,
@@ -96,6 +100,7 @@ class trainSR():
         if custom_functions_dict is None:
             custom_functions_dict = [None for _ in file_name]
         
+        
 
         instances = [ 
             {"file_name": file_name[i], "func": func[i], "x_range": x_range[i],
@@ -105,6 +110,9 @@ class trainSR():
              for i in range(len(file_name))
          ]
         
+        # logger = logging.getLogger()
+        # logger.info(f"print 2 - {instances[0]['func'](2)}")
+
         self.instances = instances
 
     def addFunction(self, name, opts):
@@ -144,19 +152,34 @@ class trainSR():
         return SR.predict()
 
     def runParallel(self, max_processes=8):
-        n_processes = len(self.instances)
-        if n_processes > max_processes: n_processes = max_processes
-        # print(n_processes)
-        # Every dict should be composed of {"feature_names": [options]}
-        with Pool(processes=n_processes) as pool:
-            results = pool.map(self.testAlgorithm, self.instances)
-        return results
+        
+        if max_processes == 0:
+            results = self.testAlgorithm(self.instances)
+            
+            return results
+        else:
+            n_processes = len(self.instances)
+            if n_processes > max_processes: n_processes = max_processes
+            # Every dict should be composed of {"feature_names": [options]}
+            with Pool(processes=n_processes) as pool:
+                results = pool.map(self.testAlgorithm, self.instances)
+            return results
     
     def testAlgorithm(self, instances:Dict):
 
+        func = eval(instances["func"])
+
+        # logger = logging.getLogger()
+        # logger.info(f"Processing instance: {instances}")
+        # logger.info(f"print 2 - {func(2)}")
+
+        for element in ["file_name", "func", "x_range", "n_points", "info", "functions", "operators", "weights", "custom_functions_dict"]:
+            if element not in instances:
+                instances[element] = None
+
         # Filtering
         file_name = instances["file_name"]
-        func = instances["func"]
+        # func = instances["func"]
         x_range = instances["x_range"]
         n_points = instances["n_points"]
         info = instances["info"]
@@ -198,16 +221,17 @@ class trainSR():
             raise TypeError("Info must be a dictionary.")
 
         # Initial Definitions ==============================
-        file_path = os.path.join(self.dir_path, file_name)
-        if not os.path.isdir(file_path): 
-            os.mkdir(file_path,)
-            os.mkdir(file_path + "/data")
-            os.mkdir(file_path + "/trees")
-        if os.path.isfile(file_path + "/results.csv") and not self.overwrite:
-            raise OSError("File exists")
-        else:
-            with open(file_path + "/results.csv", "w") as file:
-                file.write("MSE_error,population,generations,training_time,i_run\n")
+        if self.dir_path is not None:
+            file_path = os.path.join(self.dir_path, file_name)
+            if not os.path.isdir(file_path): 
+                os.mkdir(file_path,)
+                os.mkdir(file_path + "/data")
+                os.mkdir(file_path + "/trees")
+            if os.path.isfile(file_path + "/results.csv") and not self.overwrite:
+                raise OSError("File exists")
+            else:
+                with open(file_path + "/results.csv", "w") as file:
+                    file.write("MSE_error,population,generations,training_time,i_run\n")
 
 
         # Defining the data ================================
@@ -230,9 +254,9 @@ class trainSR():
 
         # Training the model ===============================
         for i in range(self.n_runs):
-            print(f"-=-=-=-=-=-=-=-= Training for population {self.population} and generation {self.generations} - {file_path[file_path.find('/')+1:]} =-=-=-=-=-=-=-=-")
+            print(f"-=-=-=-=-=-=-=-= Training for population {self.population} and generation {self.generations} - {file_name} =-=-=-=-=-=-=-=-")
             SR = SymbolicRegression(self.generations, self.max_expression_size, max_population_size=self.population,
-                                    max_island_count=int(self.population/10), random_const_range=self.const_range,
+                                    max_island_count=int(np.ceil(self.population/10)), random_const_range=self.const_range,
                                     operators=operators, functions=functions, weights=weights,
                                     island_interval=self.island_interval, optimization_kind=self.optimization_kind,
                                     custom_functions_dict=custom_functions_dict)
@@ -246,7 +270,7 @@ class trainSR():
             end_time = time()
             data = SR.evaluate_tree(output_AEG.sexp)
             
-            print(f"-=-=-=-=-=-=-= Done training for population {self.population} and generation {self.generations} - {file_path[file_path.find('/')+1:]} =-=-=-=-=-=-=-")
+            print(f"-=-=-=-=-=-=-= Done training for population {self.population} and generation {self.generations} - {file_name} =-=-=-=-=-=-=-")
 
             # Writing the data =================================
 
@@ -260,16 +284,17 @@ class trainSR():
             # graph = output_AEG.sexp.visualize_tree()
             # graph.render(dir_path + f"/trees/tree-{population}", format="svg")
 
-            with open(file_path + f"/trees/tree-{self.population}-{self.generations}-{i}", "wb") as file:
-                pickle.dump(output_AEG.sexp, file)
+            if self.dir_path is not None:
+                with open(file_path + f"/trees/tree-{self.population}-{self.generations}-{i}", "wb") as file:
+                    pickle.dump(output_AEG.sexp, file)
 
-            with open(file_path + f"/results.csv", "a") as file:
-                file.write(f"{SR.fitness_score(output_AEG)},{self.population},{self.generations},{end_time - start_time},{i}\n")
-            
-            if info is not None:
-                with open(file_path + "/info.csv", "w") as file:
-                    for item in info.items():
-                        file.write(f"{item[0]}, {item[1]}\n")
+                with open(file_path + f"/results.csv", "a") as file:
+                    file.write(f"{SR.fitness_score(output_AEG)},{self.population},{self.generations},{end_time - start_time},{i}\n")
+                
+                if info is not None:
+                    with open(file_path + "/info.csv", "w") as file:
+                        for item in info.items():
+                            file.write(f"{item[0]}, {item[1]}\n")
 
         
         return originX, originy, SR._operators, SR._functions   

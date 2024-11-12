@@ -1,0 +1,8 @@
+- [ ] Create pipeline analysis that contains each analysis one'd need
+  - [ ] Add working region visualization
+- [ ] Analyse: 
+  - [ ] Stable data 1
+  - [ ] Stable data 2
+  - [ ] Sugar data
+- [ ] Analyse other intervals
+- [ ] Do presentation
